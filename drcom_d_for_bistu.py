@@ -6,10 +6,10 @@ import socket, struct, time,random,re
 from hashlib import md5
 
 #userinfo
-username=''  #学号
-password=''  #密码
+username = ''  #学号
+password = ''  #密码
 host_ip = ''  #dhcp到的ip地址
-mac = 0x0050bace070c
+mac = 0x000A020B030C  #建议修改mac地址为连接校园网网卡的mac地址，如不修改可能出现未知错误
 #userinfo_end
 
 #ues_rconfig
@@ -296,7 +296,7 @@ def try_socket():
 		s.bind(("0.0.0.0", 61440))
 		s.settimeout(3)
 	except:
-		print "...wait 3 seconds"
+		print "Wait 3 seconds..."
 		time.sleep(3)
 		return
 	else:
