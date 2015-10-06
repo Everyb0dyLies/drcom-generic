@@ -2,7 +2,7 @@
 #Licensed under the AGPLv3
 #此版本适配北京信息科技大学
 
-import socket, struct, time,random,re
+import socket, struct, time, random, re, threading
 from hashlib import md5
 
 #userinfo
@@ -14,6 +14,8 @@ mac = 0x000A020B030C  #建议修改mac地址为连接校园网网卡的mac地址
 
 #ues_rconfig
 AUTO_RE_LOGIN = True  #是否在断线后自动重新登陆，默认为真
+WAIT_TIME = 5  #min，在等待时间内如果尝试次数超过限制将停止运行
+TRY_TIMES = 2  #在限制时间内最多尝试登陆的次数
 #ues_rconfig_end
 
 #config #请不要在不了解的情况下随意修改以下参数
@@ -41,15 +43,21 @@ class LoginException (Exception):
 		pass
 
 def version():
-	print "============================" 
+	print "============================"
 	print "DrCOM Login Client for BISTU"
-	print "============================" 
+	print "           V1.2.0           "
+	print "         @iming.org         "
+	print "============================"
+
+def reset_try_times():
+	global try_times
+	print "[reset_try_times] Reset try_times"
+	try_times = TRY_TIMES
 
 def md5sum(s):
     m = md5()
     m.update(s)
     return m.digest()
-
 
 def keep_alive1(salt,tail,pwd,svr):
 	foo = struct.pack('!H',int(time.time())%0xFFFF)
@@ -109,7 +117,6 @@ def keep_alive2(*args):
 			continue
 			#print '[keep_alive2] recv/unexpected',data.encode('hex')
 	#print '[keep_alive2] recv1',data.encode('hex')
-	
 	ran += random.randint(1,10)   
 	packet = keep_alive_package_builder(1,dump(ran),'\x00'*4,1,False)
 	#print '[keep_alive2] send2',packet.encode('hex')
@@ -120,8 +127,6 @@ def keep_alive2(*args):
 			break
 	#print '[keep_alive2] recv2',data.encode('hex')
 	tail = data[16:20]
-
-
 	ran += random.randint(1,10)   
 	packet = keep_alive_package_builder(2,dump(ran),tail,3,False)
 	#print '[keep_alive2] send3',packet.encode('hex')
@@ -134,10 +139,9 @@ def keep_alive2(*args):
 	tail = data[16:20]
 	print "[keep-alive] keep-alive loop was in daemon."
 	i = 3
-
 	while True:
 		try:
-			keep_alive1(SALT,package_tail,password,server)
+			keep_alive1(salt, package_tail, password, server)
 			print '[keep_alive2] send'
 			ran += random.randint(1,10)   
 			packet = keep_alive_package_builder(i,dump(ran),tail,1,False)
@@ -160,8 +164,9 @@ def keep_alive2(*args):
 			#print('DEBUG: keep_alive2,packet 5 return\n',data.encode('hex'))
 			i = (i+2) % 0xFF
 			time.sleep(20)
-		except:
+		except Exception, e:
 			print("")
+			print e;
 			return
 
 
@@ -213,20 +218,21 @@ def mkpkt(salt, usr, pwd, mac):
 
 
 def challenge(svr,ran):
+	try_times = TRY_TIMES
 	while True:
 		t = struct.pack("<H", int(ran)%(0xFFFF))
-		s.sendto("\x01\x02"+t+"\x09"+"\x00"*15, (svr, 61440))
 		try:
+			s.sendto("\x01\x02"+t+"\x09"+"\x00"*15, (svr, 61440))
 			data, address = s.recvfrom(1024)
 			#print('[challenge] recv',data.encode('hex'))
-		except:
+		except Exception, e:
 			print('[challenge] Timeout, retrying...')
+			try_times = try_times - 1
+			if try_times == 0:
+				raise ChallengeException
 			continue
-		
 		if address == (svr, 61440):
 			break
-		else:
-			continue
 	#print('[DEBUG] challenge:\n' + data.encode('hex'))
 	if data[0] != '\x02':
 		raise ChallengeException
@@ -235,10 +241,9 @@ def challenge(svr,ran):
 
 
 def login(usr, pwd, svr):
-	global SALT
+	global salt
 	i = 0
 	salt = challenge(svr,time.time()+random.randint(0xF,0xFF))
-	SALT = salt
 	packet = mkpkt(salt, usr, pwd, mac)
 	#print('[login] send',packet.encode('hex'))
 	s.sendto(packet, (svr, 61440))
@@ -256,7 +261,7 @@ def login(usr, pwd, svr):
 	else:
 		if i >= 5 and UNLIMITED_RETRY == False :
 			print('[login] exception occured.')
-			sys.exit(1)
+			exit(1)
 		else:
 			print("[login] Login failed.")
 			raise LoginException
@@ -264,28 +269,41 @@ def login(usr, pwd, svr):
 
 		
 def main():
-	global server,username,password,host_name,host_os,dhcp_server,mac,hexip,host_ip,package_tail
+	global server, username, password, host_name, host_os, dhcp_server, mac, hexip, host_ip, package_tail, salt, try_times
 	hexip = socket.inet_aton(host_ip)
 	host_name = "est-pc"
 	host_os = "DrcomGoAway"  #default is 8089D
 	dhcp_server = "0.0.0.0"
 	count = 0
+	try_times = TRY_TIMES
 	while True:
 		count = count+1
-		print("[main] Prepare the %d times login." % count)
+		print "[main] Prepare the %d times login." % count
 		try:
 			package_tail = login(username, password, server)
 		except LoginException:
-			print("[main] Please check the login information!")
+			print "[main] Please check the login information!"
 			return
-		print("[main] Prepare send heartbeat packet.")
-		keep_alive2(SALT,package_tail,password,server)
-		print("[main] Dropped.")
+		except ChallengeException:
+			print "[main] Please check your network!"
+			return
+		print "[main] Prepare send heartbeat packet."
+		keep_alive2(salt, package_tail, password, server)
+		print "[main] Dropped."
 		if not AUTO_RE_LOGIN:
 			return
-		print("Wait 3 seconds...")
+		if try_times == 0:
+			print "[main] Already try too much times!"
+			return
+		else:
+			try_times = try_times - 1
+			timer = threading.Timer(WAIT_TIME * 60, reset_try_times)
+			timer.setDaemon('True')
+			timer.start()
+		print "[main] try_times:%d" % try_times
+		print "[main] Wait 3 seconds..."
 		time.sleep(3)
-		print("Re-login.")
+		print "[main] Re-login."
 
 
 def try_socket():
@@ -295,17 +313,22 @@ def try_socket():
 		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		s.bind(("0.0.0.0", 61440))
 		s.settimeout(3)
-	except:
+	except Exception, e:
 		print "Wait 3 seconds..."
+		print e
 		time.sleep(3)
 		return
-	else:
-		SALT= ''
 
 
 if __name__ == "__main__":
-	try_socket()
-	version()
-	main()
+	print "You can press Ctrl+c to close this service!"
+	try:
+		try_socket()
+		version()
+		main()
+	except KeyboardInterrupt:
+		print "User press Ctrl+c, exit!"
+		exit(0)
+	
 
 
