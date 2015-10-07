@@ -27,8 +27,8 @@ if len(sys.argv) == 8:  #命令行参数处理
 		AUTO_RE_LOGIN = False
 	else:
 		AUTO_RE_LOGIN = True
-	WAIT_TIME = sys.argv[6]
-	TRY_TIMES = sys.argv[7]
+	WAIT_TIME = int(sys.argv[6])
+	TRY_TIMES = int(sys.argv[7])
 
 #config #请不要在不了解的情况下随意修改以下参数
 server = '192.168.211.3'
