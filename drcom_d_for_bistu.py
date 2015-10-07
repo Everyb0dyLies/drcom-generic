@@ -2,7 +2,7 @@
 #Licensed under the AGPLv3
 #此版本适配北京信息科技大学
 
-import socket, struct, time, random, re, threading
+import sys, socket, struct, time, random, re, threading
 from hashlib import md5
 
 #userinfo
@@ -17,6 +17,18 @@ AUTO_RE_LOGIN = True  #是否在断线后自动重新登陆，默认为真
 WAIT_TIME = 5  #min，在等待时间内如果尝试次数超过限制将停止运行
 TRY_TIMES = 2  #在限制时间内最多尝试登陆的次数
 #ues_rconfig_end
+
+if len(sys.argv) == 8:  #命令行参数处理
+	username = sys.argv[1]
+	password = sys.argv[2]
+	host_ip = sys.argv[3]
+	mac = eval(sys.argv[4])
+	if sys.argv[5] == 0:
+		AUTO_RE_LOGIN = False
+	else:
+		AUTO_RE_LOGIN = True
+	WAIT_TIME = sys.argv[6]
+	TRY_TIMES = sys.argv[7]
 
 #config #请不要在不了解的情况下随意修改以下参数
 server = '192.168.211.3'
